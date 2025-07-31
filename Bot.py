@@ -1,77 +1,76 @@
-import asyncio
-import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo,
+)
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
+from flask import Flask, request, jsonify
+from telegram import Bot
+# --- BOT SETTINGS ---
+TOKEN = '8467430850:AAFO_GWzXxNct40AxIdNIoPFY7p9E83i4fw'  # 🔐 BotFather থেকে নতুন token নিন
+CHANNEL_ID = -1002833876047   # ✅ আপনার প্রাইভেট চ্যানেল/গ্রুপ আইডি
+CHANNEL_ID2 = -1002808301387
+WEBAPP_URL = "https://diamzonestore.in/ads/"  # 💻 আপনার ওয়েব অ্যাড পেইজ
 
-# Bot token (Replace with your bot token)
-TOKEN = "7673544377:AAE3BA3mVEP8wIdhhuW3KV9-tBvk_8mdxac"
+# --- /start Command ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    try:
+        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            # ✅ Notify in your admin group/channel
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID2,
+                text=f"👤 New user joined: [{update.effective_user.first_name}](tg://user?id={user_id})",
+                parse_mode="Markdown"
+            )
 
-# Initialize bot and dispatcher
-bot = Bot(token=TOKEN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+            # ✅ Show welcome animation + mini app button
+            gif_url = "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyYnJ4Z242bTdodWoyZjQwM3k4YmUyc2dzMTl1dDFkZGZtNnE1bmRmbyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/YTRUPHI7fXK6s/giphy.gif"
+            await context.bot.send_animation(
+                chat_id=user_id,
+                animation=gif_url,
+                caption=(
+                    "🎉 Welcome to Easy Earning Bot!\n\n"
+                    "💸 Earn real rewards by watching ads on our Telegram Bot.\n"
+                    "🔥 It's simple: view ads, earn money, and withdraw anytime.\n\n"
+                    "👉 Tap the button below to start earning now!"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🚀 Start Earning", web_app=WebAppInfo(url=WEBAPP_URL))]
+                ])
+            )
+        else:
+            raise Exception("User not joined")
+    except:
+        # ❌ User not in channel
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "🔒 To use this bot, you must join our private channel first.\n\n"
+                "📢 Please join the channel using the button below, then click ✅ I Joined."
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📢 Join Channel", url="https://t.me/+6Wg_IQEplk4zODM1")],
+                [InlineKeyboardButton("✅ I Joined", callback_data="check_join")]
+            ])
+        )
 
-# User data storage
-users = {}
-waiting_users = []
-active_chats = {}
+# --- Callback: ✅ I Joined ---
+async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await start(update, context)
 
-def get_keyboard():
-    return ReplyKeyboardMarkup(resize_keyboard=True).add(
-        KeyboardButton("Start Chat"),
-        KeyboardButton("Stop Chat"),
-        KeyboardButton("Switch Chat")
-    )
-
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    users[message.from_user.id] = {'gender': None, 'chatting_with': None}
-    await message.answer("Welcome! Use the buttons below to start chatting.", reply_markup=get_keyboard())
-
-@dp.message_handler(lambda message: message.text == "Start Chat")
-async def start_chat(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in active_chats:
-        await message.answer("You're already in a chat. Type 'Stop Chat' to leave.")
-        return
-    
-    if waiting_users:
-        partner_id = waiting_users.pop(0)
-        active_chats[user_id] = partner_id
-        active_chats[partner_id] = user_id
-        await bot.send_message(partner_id, "You are now connected! Say hi!")
-        await message.answer("You are now connected! Say hi!")
-    else:
-        waiting_users.append(user_id)
-        await message.answer("Waiting for a partner...")
-
-@dp.message_handler(lambda message: message.text == "Stop Chat")
-async def stop_chat(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in active_chats:
-        partner_id = active_chats[user_id]
-        del active_chats[user_id]
-        del active_chats[partner_id]
-        await bot.send_message(partner_id, "Your partner has disconnected.")
-        await message.answer("Chat ended.")
-    elif user_id in waiting_users:
-        waiting_users.remove(user_id)
-        await message.answer("You left the queue.")
-    else:
-        await message.answer("You're not in a chat.")
-
-@dp.message_handler()
-async def chat_handler(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in active_chats:
-        partner_id = active_chats[user_id]
-        await bot.send_message(partner_id, message.text)
-    else:
-        await message.answer("You're not in a chat. Type 'Start Chat' to find a partner.")
-
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    await dp.start_polling()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# --- Main App Setup ---
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(check_join_callback, pattern="check_join"))
+    app.run_polling()
